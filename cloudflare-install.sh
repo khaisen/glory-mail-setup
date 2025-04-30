@@ -82,7 +82,13 @@ cat > $CERTS_DIR/origin-certificate.pem
 echo "Please paste your Cloudflare Private Key contents:"
 echo "(Press Ctrl+D when finished)"
 cat > $CERTS_DIR/private-key.pem
-
+mv private-key.pem $CERTS_DIR/private-key.pem
+mv origin-certificate.pem $CERTS_DIR/origin-certificate.pem
+# Check if files are created
+if [ ! -f "$CERTS_DIR/origin-certificate.pem" ] || [ ! -f "$CERTS_DIR/private-key.pem" ]; then
+  echo "Error: Certificate files not created."
+  exit 1
+fi
 # Set proper permissions
 chmod 600 $CERTS_DIR/private-key.pem
 chmod 644 $CERTS_DIR/origin-certificate.pem

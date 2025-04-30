@@ -75,13 +75,13 @@ echo "Setting up Cloudflare certificates..."
 mkdir -p $CERTS_DIR
 
 # Create certificate files
-echo "Please paste your Cloudflare Origin Certificate contents:"
-echo "(Press Ctrl+D when finished)"
-cat > $CERTS_DIR/origin-certificate.pem
+# echo "Please paste your Cloudflare Origin Certificate contents:"
+# echo "(Press Ctrl+D when finished)"
+# cat > $CERTS_DIR/origin-certificate.pem
 
-echo "Please paste your Cloudflare Private Key contents:"
-echo "(Press Ctrl+D when finished)"
-cat > $CERTS_DIR/private-key.pem
+# echo "Please paste your Cloudflare Private Key contents:"
+# echo "(Press Ctrl+D when finished)"
+# cat > $CERTS_DIR/private-key.pem
 mv private-key.pem $CERTS_DIR/private-key.pem
 mv origin-certificate.pem $CERTS_DIR/origin-certificate.pem
 # Check if files are created

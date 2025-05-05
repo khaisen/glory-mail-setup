@@ -69,7 +69,7 @@ apt update && apt upgrade -y
 
 # Install required packages
 echo "Installing required packages..."
-apt install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https dnsutils netcat telnet
+apt install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https dnsutils netcat-openbsd telnet
 apt install -y postfix dovecot-core dovecot-imapd dovecot-pop3d dovecot-lmtpd postfix-mysql dovecot-mysql
 apt install -y apache2 php php-common php-imap php-json php-curl php-zip php-xml php-mbstring php-imagick php-mysql php-intl mariadb-server
 apt install -y fail2ban opendkim opendkim-tools postfix-policyd-spf-python openssl

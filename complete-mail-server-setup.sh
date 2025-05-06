@@ -3,7 +3,7 @@
 # This script performs a full installation and configuration of a mail server
 
 # Exit on error
-set -e
+# set -e
 
 # Check if running as root
 if [ "$(id -u)" -ne 0 ]; then

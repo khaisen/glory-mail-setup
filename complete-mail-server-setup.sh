@@ -337,9 +337,22 @@ a2enmod rewrite ssl
 
 # Configure MySQL database for Roundcube
 echo "Setting up MySQL database for Roundcube..."
-mysql -e "CREATE DATABASE IF NOT EXISTS roundcube DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;"
-mysql -e "GRANT ALL PRIVILEGES ON roundcube.* TO 'roundcube'@'localhost' IDENTIFIED BY '$DB_PASSWORD';"
-mysql -e "FLUSH PRIVILEGES;"
+
+# Check if the database already exists
+DB_EXISTS=$(mysql -e "SHOW DATABASES LIKE 'roundcube';" | grep "roundcube" | wc -l)
+
+if [ "$DB_EXISTS" -eq 1 ]; then
+  echo "Database 'roundcube' already exists. Dropping and recreating it..."
+  mysql -e "DROP DATABASE roundcube;" || { echo "Failed to drop existing Roundcube database."; exit 1; }
+fi
+
+# Create the database
+mysql -e "CREATE DATABASE roundcube DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || { echo "Failed to create Roundcube database."; exit 1; }
+
+# Grant privileges to the Roundcube user
+mysql -e "GRANT ALL PRIVILEGES ON roundcube.* TO 'roundcube'@'localhost' IDENTIFIED BY '$DB_PASSWORD';" || { echo "Failed to grant privileges to Roundcube user."; exit 1; }
+mysql -e "FLUSH PRIVILEGES;" || { echo "Failed to flush MySQL privileges."; exit 1; }
+
 
 # Download and install Roundcube
 echo "Installing Roundcube webmail..."
@@ -363,9 +376,9 @@ sed -i "s|\$config\['smtp_port'\] = .*|\$config\['smtp_port'\] = 25;|g" /var/www
 sed -i "s|\$config\['product_name'\] = .*|\$config\['product_name'\] = 'Glory Education Center Webmail';|g" /var/www/roundcube/config/config.inc.php
 sed -i "s|\$config\['des_key'\] = .*|\$config\['des_key'\] = '$DES_KEY';|g" /var/www/roundcube/config/config.inc.php
 
-# Initialize Roundcube database
+# Initialize the Roundcube database
 echo "Initializing Roundcube database..."
-mysql roundcube < /var/www/roundcube/SQL/mysql.initial.sql
+mysql roundcube < /var/www/roundcube/SQL/mysql.initial.sql || { echo "Failed to initialize Roundcube database."; exit 1; }
 
 # Remove installer and secure config
 echo "Securing Roundcube installation..."

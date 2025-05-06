@@ -344,7 +344,6 @@ mysql -e "FLUSH PRIVILEGES;" || handle_error "Failed to flush MySQL privileges."
 # Initialize the Roundcube database
 echo "Initializing Roundcube database..."
 mysql roundcube < /var/www/roundcube/SQL/mysql.initial.sql || handle_error "Failed to initialize Roundcube database."
-
 # Configure Roundcube
 echo "Configuring Roundcube..."
 # Copy sample configuration file

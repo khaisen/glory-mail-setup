@@ -5,129 +5,141 @@
 # Exit on error
 set -e
 
-# Function to handle errors
-handle_error() {
-  echo "ERROR: $1"
-  exit 1
-}
-
 # Check if running as root
 if [ "$(id -u)" -ne 0 ]; then
-  handle_error "This script must be run as root."
+  echo "This script must be run as root"
+  exit 1
 fi
 
-# Variables
+# Variables - customize these before running
 DOMAIN="gloryeducationcenter.in"
 MAIL_HOSTNAME="mail.$DOMAIN"
 ADMIN_EMAIL="admin@$DOMAIN"
-SERVER_IP="146.235.225.59"
+SERVER_IP="146.235.225.59" # Replace with your actual server IP
 CERTS_DIR="/etc/cloudflare/certs"
-CERT_FOLDER="./certificates"
+CERT_FOLDER="./certificates" # Local folder containing your Cloudflare certificates
+
+echo "========================================================="
+echo "       COMPLETE MAIL SERVER SETUP SCRIPT               "
+echo "========================================================="
+echo "Domain: $DOMAIN"
+echo "Mail Hostname: $MAIL_HOSTNAME"
+echo "Admin Email: $ADMIN_EMAIL"
+echo "Server IP: $SERVER_IP"
+echo "Certificate Directory: $CERTS_DIR"
+echo ""
 
 # Prompt for admin password
 read -s -p "Enter password for $ADMIN_EMAIL: " ADMIN_PASSWORD
 echo ""
 if [ -z "$ADMIN_PASSWORD" ]; then
-  handle_error "Password cannot be empty."
+  echo "Password cannot be empty"
+  exit 1
 fi
 
 read -s -p "Confirm password: " CONFIRM_PASSWORD
 echo ""
 if [ "$ADMIN_PASSWORD" != "$CONFIRM_PASSWORD" ]; then
-  handle_error "Passwords do not match."
+  echo "Passwords do not match"
+  exit 1
 fi
 
 # Generate a strong database password
-DB_PASSWORD=$(openssl rand -base64 16) || handle_error "Failed to generate database password."
+DB_PASSWORD=$(openssl rand -base64 16)
 
 # Check if certificate folder exists
 if [ ! -d "$CERT_FOLDER" ]; then
-  handle_error "Certificate folder '$CERT_FOLDER' not found. Please create it and add the required certificate files."
+  echo "ERROR: Certificate folder '$CERT_FOLDER' not found"
+  echo "Please create this folder and place your Cloudflare origin-certificate.pem and private-key.pem files inside"
+  exit 1
 fi
 
 if [ ! -f "$CERT_FOLDER/origin-certificate.pem" ] || [ ! -f "$CERT_FOLDER/private-key.pem" ]; then
-  handle_error "Certificate files not found in '$CERT_FOLDER'. Ensure origin-certificate.pem and private-key.pem exist."
+  echo "ERROR: Certificate files not found in '$CERT_FOLDER'"
+  echo "Please ensure origin-certificate.pem and private-key.pem exist in this folder"
+  exit 1
 fi
 
 # STEP 1: System preparation
-echo "[STEP 1] System preparation and package installation"
+echo "\n[STEP 1] System preparation and package installation"
 
 # Update system
 echo "Updating system packages..."
-export DEBIAN_FRONTEND=noninteractive
-apt update && apt upgrade -y || handle_error "Failed to update system packages."
+apt update && apt upgrade -y
 
 # Install required packages
 echo "Installing required packages..."
-apt install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https dnsutils netcat-openbsd telnet || handle_error "Failed to install basic utilities."
-apt install -y postfix dovecot-core dovecot-imapd dovecot-pop3d dovecot-lmtpd postfix-mysql dovecot-mysql || handle_error "Failed to install Postfix and Dovecot."
-apt install -y apache2 php php-common php-imap php-json php-curl php-zip php-xml php-mbstring php-imagick php-mysql php-intl mariadb-server || handle_error "Failed to install Apache, PHP, or MariaDB."
-apt install -y fail2ban opendkim opendkim-tools postfix-policyd-spf-python openssl || handle_error "Failed to install Fail2Ban, OpenDKIM, or other tools."
+apt install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https dnsutils netcat-openbsd telnet
+apt install -y postfix dovecot-core dovecot-imapd dovecot-pop3d dovecot-lmtpd postfix-mysql dovecot-mysql
+apt install -y apache2 php php-common php-imap php-json php-curl php-zip php-xml php-mbstring php-imagick php-mysql php-intl mariadb-server
+apt install -y fail2ban opendkim opendkim-tools postfix-policyd-spf-python openssl
 
 # Set hostname
-echo "Setting hostname..."
-echo "$MAIL_HOSTNAME" > /etc/hostname || handle_error "Failed to write to /etc/hostname."
-hostnamectl set-hostname "$MAIL_HOSTNAME" || handle_error "Failed to set hostname."
+echo "Setting hostname to $MAIL_HOSTNAME..."
+hostnamectl set-hostname $MAIL_HOSTNAME
 
 # Update hosts file
 echo "Updating /etc/hosts file..."
 if ! grep -q "$MAIL_HOSTNAME" /etc/hosts; then
-  echo "127.0.1.1 $MAIL_HOSTNAME mail" >> /etc/hosts || handle_error "Failed to update /etc/hosts."
+  echo "127.0.1.1 $MAIL_HOSTNAME mail" >> /etc/hosts
 fi
 
 # Configure Firewall
-echo "Configuring firewall..."
-apt install -y ufw || handle_error "Failed to install UFW."
-ufw allow ssh || handle_error "Failed to allow SSH in UFW."
-ufw allow http || handle_error "Failed to allow HTTP in UFW."
-ufw allow https || handle_error "Failed to allow HTTPS in UFW."
-ufw allow 25/tcp || handle_error "Failed to allow SMTP in UFW."
-ufw allow 465/tcp || handle_error "Failed to allow SMTPS in UFW."
-ufw allow 587/tcp || handle_error "Failed to allow Submission in UFW."
-ufw allow 110/tcp || handle_error "Failed to allow POP3 in UFW."
-ufw allow 995/tcp || handle_error "Failed to allow POP3S in UFW."
-ufw allow 143/tcp || handle_error "Failed to allow IMAP in UFW."
-ufw allow 993/tcp || handle_error "Failed to allow IMAPS in UFW."
-ufw --force enable || handle_error "Failed to enable UFW."
+echo "Setting up firewall..."
+apt install -y ufw
+ufw allow ssh
+ufw allow http
+ufw allow https
+ufw allow 25/tcp   # SMTP
+ufw allow 465/tcp  # SMTPS
+ufw allow 587/tcp  # Submission
+ufw allow 110/tcp  # POP3
+ufw allow 995/tcp  # POP3S
+ufw allow 143/tcp  # IMAP
+ufw allow 993/tcp  # IMAPS
+
+# Only enable UFW if it's not already enabled, to prevent SSH lockout
+if ! ufw status | grep -q "Status: active"; then
+  echo "Enabling firewall..."
+  ufw --force enable
+fi
 
 # STEP 2: Mail directory setup
-echo "[STEP 2] Setting up mail directories"
+echo "\n[STEP 2] Setting up mail directories"
 
 # Create mail directories and user
-echo "Creating mail directories..."
-mkdir -p /var/mail/vhosts/$DOMAIN || handle_error "Failed to create mail directories."
+echo "Creating mail directories and virtual user..."
+mkdir -p /var/mail/vhosts/$DOMAIN
 
 # Create vmail user and group if they don't exist
 if ! getent group vmail >/dev/null; then
-  groupadd -g 5000 vmail || handle_error "Failed to create vmail group."
+  groupadd -g 5000 vmail
 fi
 
 if ! getent passwd vmail >/dev/null; then
-  useradd -g vmail -u 5000 -d /var/mail/vhosts -s /usr/sbin/nologin vmail || handle_error "Failed to create vmail user."
+  useradd -g vmail -u 5000 -d /var/mail/vhosts -s /usr/sbin/nologin vmail
 fi
 
-chown -R vmail:vmail /var/mail/vhosts || handle_error "Failed to set ownership for mail directories."
+chown -R vmail:vmail /var/mail/vhosts
 
 # STEP 3: SSL Certificates setup
-echo "[STEP 3] Setting up SSL certificates"
+echo "\n[STEP 3] Setting up SSL certificates"
 
 # Create certificate directory
 echo "Creating certificate directory..."
-mkdir -p $CERTS_DIR || handle_error "Failed to create certificate directory."
+mkdir -p $CERTS_DIR
 
 # Copy certificate files
 echo "Copying certificate files..."
-cp "$CERT_FOLDER/origin-certificate.pem" "$CERTS_DIR/" || handle_error "Failed to copy origin-certificate.pem."
-cp "$CERT_FOLDER/private-key.pem" "$CERTS_DIR/" || handle_error "Failed to copy private-key.pem."
+cp "$CERT_FOLDER/origin-certificate.pem" "$CERTS_DIR/"
+cp "$CERT_FOLDER/private-key.pem" "$CERTS_DIR/"
 
 # Set proper permissions
 echo "Setting proper certificate permissions..."
-chown root:root $CERTS_DIR/origin-certificate.pem || handle_error "Failed to set ownership for origin-certificate.pem."
-chmod 644 $CERTS_DIR/origin-certificate.pem || handle_error "Failed to set permissions for origin-certificate.pem."
-chown root:root $CERTS_DIR/private-key.pem || handle_error "Failed to set ownership for private-key.pem."
-chmod 640 $CERTS_DIR/private-key.pem || handle_error "Failed to set permissions for private-key.pem."
-
-# Continue adding error handling for other steps...
+chown root:root $CERTS_DIR/origin-certificate.pem
+chmod 644 $CERTS_DIR/origin-certificate.pem
+chown root:root $CERTS_DIR/private-key.pem
+chmod 640 $CERTS_DIR/private-key.pem
 
 # STEP 4: Postfix configuration
 echo "\n[STEP 4] Configuring Postfix"
@@ -325,29 +337,9 @@ a2enmod rewrite ssl
 
 # Configure MySQL database for Roundcube
 echo "Setting up MySQL database for Roundcube..."
-
-# Check if the database already exists
-DB_EXISTS=$(mysql -e "SHOW DATABASES LIKE 'roundcube';" | grep "roundcube" | wc -l)
-
-if [ "$DB_EXISTS" -eq 1 ]; then
-  echo "Database 'roundcube' already exists. Dropping and recreating it..."
-  mysql -e "DROP DATABASE roundcube;" || handle_error "Failed to drop existing Roundcube database."
-fi
-
-# Create the database
-mysql -e "CREATE DATABASE roundcube DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;" || handle_error "Failed to create Roundcube database."
-
-# Grant privileges to the Roundcube user
-mysql -e "GRANT ALL PRIVILEGES ON roundcube.* TO 'roundcube'@'localhost' IDENTIFIED BY '$DB_PASSWORD';" || handle_error "Failed to grant privileges to Roundcube user."
-mysql -e "FLUSH PRIVILEGES;" || handle_error "Failed to flush MySQL privileges."
-
-# Initialize the Roundcube database
-echo "Initializing Roundcube database..."
-mysql roundcube < /var/www/roundcube/SQL/mysql.initial.sql || handle_error "Failed to initialize Roundcube database."
-# Configure Roundcube
-echo "Configuring Roundcube..."
-# Copy sample configuration file
-cp /var/www/roundcube/config/config.inc.php.sample /var/www/roundcube/config/config.inc.php || handle_error "Failed to copy Roundcube configuration file."
+mysql -e "CREATE DATABASE IF NOT EXISTS roundcube DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;"
+mysql -e "GRANT ALL PRIVILEGES ON roundcube.* TO 'roundcube'@'localhost' IDENTIFIED BY '$DB_PASSWORD';"
+mysql -e "FLUSH PRIVILEGES;"
 
 # Download and install Roundcube
 echo "Installing Roundcube webmail..."
@@ -360,41 +352,20 @@ chown -R www-data:www-data /var/www/roundcube/
 
 # Configure Roundcube
 echo "Configuring Roundcube..."
-# Copy sample configuration file
-cp /var/www/roundcube/config/config.inc.php.sample /var/www/roundcube/config/config.inc.php || handle_error "Failed to copy Roundcube configuration file."
+cp /var/www/roundcube/config/config.inc.php.sample /var/www/roundcube/config/config.inc.php
+DES_KEY=$(openssl rand -base64 24)
 
-# Generate DES key
-DES_KEY=$(openssl rand -base64 24) || handle_error "Failed to generate DES key for Roundcube."
+# Use | as the delimiter to avoid conflicts with special characters
+sed -i "s|\$config\['db_dsnw'\] = .*|\$config\['db_dsnw'\] = 'mysql://roundcube:$DB_PASSWORD@localhost/roundcube';|g" /var/www/roundcube/config/config.inc.php
+sed -i "s|\$config\['default_host'\] = .*|\$config\['default_host'\] = 'localhost';|g" /var/www/roundcube/config/config.inc.php
+sed -i "s|\$config\['smtp_server'\] = .*|\$config\['smtp_server'\] = 'localhost';|g" /var/www/roundcube/config/config.inc.php
+sed -i "s|\$config\['smtp_port'\] = .*|\$config\['smtp_port'\] = 25;|g" /var/www/roundcube/config/config.inc.php
+sed -i "s|\$config\['product_name'\] = .*|\$config\['product_name'\] = 'Glory Education Center Webmail';|g" /var/www/roundcube/config/config.inc.php
+sed -i "s|\$config\['des_key'\] = .*|\$config\['des_key'\] = '$DES_KEY';|g" /var/www/roundcube/config/config.inc.php
 
-# Update configuration file
-sed -i "s|\$config\['db_dsnw'\] = .*|\$config\['db_dsnw'\] = 'mysql://roundcube:$DB_PASSWORD@localhost/roundcube';|g" /var/www/roundcube/config/config.inc.php || handle_error "Failed to configure database DSN for Roundcube."
-sed -i "s|\$config\['default_host'\] = .*|\$config\['default_host'\] = 'localhost';|g" /var/www/roundcube/config/config.inc.php || handle_error "Failed to configure default IMAP host for Roundcube."
-sed -i "s|\$config\['smtp_server'\] = .*|\$config\['smtp_server'\] = 'localhost';|g" /var/www/roundcube/config/config.inc.php || handle_error "Failed to configure SMTP server for Roundcube."
-sed -i "s|\$config\['smtp_port'\] = .*|\$config\['smtp_port'\] = 25;|g" /var/www/roundcube/config/config.inc.php || handle_error "Failed to configure SMTP port for Roundcube."
-sed -i "s|\$config\['product_name'\] = .*|\$config\['product_name'\] = 'Glory Education Center Webmail';|g" /var/www/roundcube/config/config.inc.php || handle_error "Failed to configure product name for Roundcube."
-sed -i "s|\$config\['des_key'\] = .*|\$config\['des_key'\] = '$DES_KEY';|g" /var/www/roundcube/config/config.inc.php || handle_error "Failed to configure DES key for Roundcube."
-
-# Configure MySQL database for Roundcube
-echo "Setting up MySQL database for Roundcube..."
-
-# Check if the database already exists
-DB_EXISTS=$(mysql -e "SHOW DATABASES LIKE 'roundcube';" | grep "roundcube" | wc -l)
-
-if [ "$DB_EXISTS" -eq 1 ]; then
-  echo "Database 'roundcube' already exists. Dropping and recreating it..."
-  mysql -e "DROP DATABASE roundcube;" || handle_error "Failed to drop existing Roundcube database."
-fi
-
-# Create the database
-mysql -e "CREATE DATABASE roundcube DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;" || handle_error "Failed to create Roundcube database."
-
-# Grant privileges to the Roundcube user
-mysql -e "GRANT ALL PRIVILEGES ON roundcube.* TO 'roundcube'@'localhost' IDENTIFIED BY '$DB_PASSWORD';" || handle_error "Failed to grant privileges to Roundcube user."
-mysql -e "FLUSH PRIVILEGES;" || handle_error "Failed to flush MySQL privileges."
-
-# Initialize the Roundcube database
+# Initialize Roundcube database
 echo "Initializing Roundcube database..."
-mysql roundcube < /var/www/roundcube/SQL/mysql.initial.sql || handle_error "Failed to initialize Roundcube database."
+mysql roundcube < /var/www/roundcube/SQL/mysql.initial.sql
 
 # Remove installer and secure config
 echo "Securing Roundcube installation..."
@@ -445,7 +416,10 @@ localhost
 $DOMAIN
 $MAIL_HOSTNAME
 EOF
-
+127.0.0.1
+localhost
+mail.gloryeducationcenter.in
+$MAIL_HOSTNAME
 # Generate DKIM keys
 echo "Generating DKIM keys..."
 cd /etc/opendkim/keys/$DOMAIN

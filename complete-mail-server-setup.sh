@@ -325,9 +325,30 @@ a2enmod rewrite ssl
 
 # Configure MySQL database for Roundcube
 echo "Setting up MySQL database for Roundcube..."
-mysql -e "CREATE DATABASE IF NOT EXISTS roundcube DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;"
-mysql -e "GRANT ALL PRIVILEGES ON roundcube.* TO 'roundcube'@'localhost' IDENTIFIED BY '$DB_PASSWORD';"
-mysql -e "FLUSH PRIVILEGES;"
+
+# Check if the database already exists
+DB_EXISTS=$(mysql -e "SHOW DATABASES LIKE 'roundcube';" | grep "roundcube" | wc -l)
+
+if [ "$DB_EXISTS" -eq 1 ]; then
+  echo "Database 'roundcube' already exists. Dropping and recreating it..."
+  mysql -e "DROP DATABASE roundcube;" || handle_error "Failed to drop existing Roundcube database."
+fi
+
+# Create the database
+mysql -e "CREATE DATABASE roundcube DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;" || handle_error "Failed to create Roundcube database."
+
+# Grant privileges to the Roundcube user
+mysql -e "GRANT ALL PRIVILEGES ON roundcube.* TO 'roundcube'@'localhost' IDENTIFIED BY '$DB_PASSWORD';" || handle_error "Failed to grant privileges to Roundcube user."
+mysql -e "FLUSH PRIVILEGES;" || handle_error "Failed to flush MySQL privileges."
+
+# Initialize the Roundcube database
+echo "Initializing Roundcube database..."
+mysql roundcube < /var/www/roundcube/SQL/mysql.initial.sql || handle_error "Failed to initialize Roundcube database."
+
+# Configure Roundcube
+echo "Configuring Roundcube..."
+# Copy sample configuration file
+cp /var/www/roundcube/config/config.inc.php.sample /var/www/roundcube/config/config.inc.php || handle_error "Failed to copy Roundcube configuration file."
 
 # Download and install Roundcube
 echo "Installing Roundcube webmail..."
@@ -354,9 +375,27 @@ sed -i "s|\$config\['smtp_port'\] = .*|\$config\['smtp_port'\] = 25;|g" /var/www
 sed -i "s|\$config\['product_name'\] = .*|\$config\['product_name'\] = 'Glory Education Center Webmail';|g" /var/www/roundcube/config/config.inc.php || handle_error "Failed to configure product name for Roundcube."
 sed -i "s|\$config\['des_key'\] = .*|\$config\['des_key'\] = '$DES_KEY';|g" /var/www/roundcube/config/config.inc.php || handle_error "Failed to configure DES key for Roundcube."
 
-# Initialize Roundcube database
+# Configure MySQL database for Roundcube
+echo "Setting up MySQL database for Roundcube..."
+
+# Check if the database already exists
+DB_EXISTS=$(mysql -e "SHOW DATABASES LIKE 'roundcube';" | grep "roundcube" | wc -l)
+
+if [ "$DB_EXISTS" -eq 1 ]; then
+  echo "Database 'roundcube' already exists. Dropping and recreating it..."
+  mysql -e "DROP DATABASE roundcube;" || handle_error "Failed to drop existing Roundcube database."
+fi
+
+# Create the database
+mysql -e "CREATE DATABASE roundcube DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;" || handle_error "Failed to create Roundcube database."
+
+# Grant privileges to the Roundcube user
+mysql -e "GRANT ALL PRIVILEGES ON roundcube.* TO 'roundcube'@'localhost' IDENTIFIED BY '$DB_PASSWORD';" || handle_error "Failed to grant privileges to Roundcube user."
+mysql -e "FLUSH PRIVILEGES;" || handle_error "Failed to flush MySQL privileges."
+
+# Initialize the Roundcube database
 echo "Initializing Roundcube database..."
-mysql roundcube < /var/www/roundcube/SQL/mysql.initial.sql
+mysql roundcube < /var/www/roundcube/SQL/mysql.initial.sql || handle_error "Failed to initialize Roundcube database."
 
 # Remove installer and secure config
 echo "Securing Roundcube installation..."
